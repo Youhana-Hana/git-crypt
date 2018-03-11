@@ -1,0 +1,79 @@
+#!/bin/bash
+
+#USAGE
+#  ./setup-encrypted-repo -u new-git-repo-url -n gpg-key-name -k gpg-private-key
+
+#bash option stop on first error
+set -e
+
+while getopts u:n:k: option
+do
+case "${option}"
+in
+u) git_repo_url=${OPTARG};;
+n) gpg_key_name=${OPTARG};;
+k) gpg_private_key=${OPTARG};;
+esac
+done
+
+if [ -z "$git_repo_url" ]
+  then
+    echo -e "Error!, No target repo URL supplied\n"
+    echo -e "./setup-encrypted-repo -u new-git-repo-url -n gpg-key-name -k gpg-private-key"
+    exit 1
+fi
+
+if [ -z "$gpg_key_name" ]
+then
+    echo -e "Error!, No gpg name supplied\n"
+    echo -e "./setup-encrypted-repo -u new-git-repo-url -n gpg-key-name -k gpg-private-key"
+    exit 1
+fi
+
+if [ -z "$gpg_private_key" ]
+  then
+    echo -e "Error!, No private gpg key supplied\n"
+    echo -e "./setup-encrypted-repo -u new-git-repo-url -n gpg-key-name -k gpg-private-key"
+    exit 1
+fi
+
+echo -e "Creating repo folder\n"
+repo_name=${git_repo_url##*/}
+folder_name=${repo_name%%.git}
+
+mkdir -p $folder_name
+cd $folder_name
+
+echo -e "git init\n"
+git init
+git remote add origin $git_repo_url
+git remote -v
+
+echo -e "*.yml filter=git-crypt diff=git-crypt\n**/*.yml filter=git-crypt diff=git-crypt\n*.json filter=git-crypt diff=git-crypt\n**/*.json filter=git-crypt diff=git-crypt\n" > .gitattributes
+
+git add .
+git commit -m 'Initial .gitattributes file'
+git push origin master
+
+echo -e "git repo created\n"
+
+echo -e "Create test files\n"
+touch test.json
+touch test.yml
+
+echo -e "Configure git-crypt\n"
+
+git-crypt init> /dev/null 2>&1
+
+echo -e "-----BEGIN PGP PRIVATE KEY BLOCK-----\n\n$gpg_private_key\n\n-----END PGP PRIVATE KEY BLOCK-----" | gpg --import
+
+gpg --list-keys --fingerprint --with-colons | sed -E -n -e 's/^fpr::::::::[0-9A-F]+):$/\1:6:/p' | gpg --import-ownertrust
+
+git-crypt add-gpg-user $gpg_key_name
+
+git-crypt status
+
+echo -e "\n Removing test.json and test.yml test files\n"
+rm test.yml test.json
+
+echo -e "Completed :)\n"
